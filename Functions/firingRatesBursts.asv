@@ -1,0 +1,99 @@
+function 
+
+% need to decide on threshold for 'active channel', currently set at 7
+
+spikeCounts = sum(spikeMatrix);
+
+%remove ref channel spikes:
+spikeCounts(Info.channels == 15) = 0;     
+active_chanIndex = find(spikeCounts>=7);
+ActiveSpikeCounts = spikeCounts(active_chanIndex);  %spikes of only active channels ('active'= >7)
+
+% calculate firing rates
+FiringRates = ActiveSpikeCounts/(length(spikeMatrix)/Params.fs); % firing rate in seconds
+Ephys.FR = FiringRates;
+
+% stats
+Ephys.meanFR = round(mean(FiringRates),3);
+Ephys.stdFR = round(std(FiringRates),3);
+Ephys.semFR = round(std(FiringRates)/(sqrt(length(ActiveSpikeCounts))),3);
+Ephys.medianFR = round(median(FiringRates),3);
+Ephys.iqrFR = round(iqr(FiringRates),3);
+Ephys.numActiveEs = length(ActiveSpikeCounts);
+
+%get rid of NaNs where there are no spikes; change to 0
+if isnan(Ephys.meanFR)
+    Ephys.meanFR=0;
+end
+if isnan(Ephys.medianFR)
+    Ephys.median_FR=0;
+end
+
+
+method ='Bakkum';
+%note, Set N = 30 (min number of bursts)
+%ensure bursts are excluded if fewer than 3 channels (see inside burstDetect
+%function)
+%to change min channels change line 207 of burstDetect.m
+%to change N (min n spikes) see line 170 of burstDetect.m
+N = 30; minChan = 3;
+
+[burstMatrix, burstTimes, burstChannels] = burstDetect(spikeMatrix, method, Params.fs, N, minChan);
+nBursts = length(burstMatrix);
+
+if ~isempty(burstMatrix)
+    for Bst=1:length(burstMatrix)
+        sp_in_bst(Bst)=sum(sum(burstMatrix{Bst,1}));
+        train = sum(burstMatrix{Bst,1},2); %sum across channels
+        train(train>1)=1; %re-binarise
+        sp_times = find(train==1);
+        sp_times2= sp_times(2:end);
+        ISI_within = sp_times2 - sp_times(1:end-1);
+        mean_ISI_w(Bst) = round(mean(ISI_within)/Params.fs*1000,3); %in ms with 3 d.p.
+        chans_involved(Bst) = length(burstChannels{Bst,1});
+        
+        NBLength(Bst) = size(burstMatrix{Bst,1},1)/Params.fs;
+        
+        clear ISI_within sp_times sp_times2 train
+        
+    end
+    sp_in_bst=sum(sp_in_bst);
+    
+    %get IBIs
+    end_times = burstTimes(1:end-1,2); %-1 because no IBI after end of last burst
+    sta_times = burstTimes(2:end,1); %start from burst start time 2
+    IBIs      = sta_times -end_times;
+    
+    % NOTE: these are based on the ISI across all channels!!!
+    Ephys.meanNBstLengthS = mean(NBLength); % mean length burst in s
+    Ephys.numNbursts = length(burstTimes);
+    Ephys.meanNumChansInvolvedInNbursts = mean(chans_involved);
+    Ephys.meanISIWithinNbursts_ms = mean(mean_ISI_w);
+    Ephys.meanISIoutsideNbursts_ms = round(mean(ISI_outside)/Params.fs*1000,3);
+    Ephys.CVIofNBI = round((std(IBIs)/mean(IBIs)),3); %3 decimal places
+    Ephys.NBurstRate = round(60*(nBursts/(length(spikeMatrix(:,1))/samplingRate)),3);
+    Ephys.fracInNburst = round(sp_in_bst/sum(sum(spikeMatrix)),3);
+    
+    %need to go intro burst detect and edit as it is not deleting the bursts
+    %with <5 channels from burstChannels and burstTimes hence they are longer
+    %need this for easier plotting of burst
+    
+else
+    disp('no bursts detected')
+    sp_in_bst=0;
+    
+    Ephys.meanNBstLengthS = Nan; % mean length burst in s
+    Ephys.numNbursts = Nan;
+    Ephys.meanNumChansInvolvedInNbursts = Nan;
+    Ephys.meanISIWithinNbursts_ms = Nan;
+    Ephys.meanISIoutsideNbursts_ms = Nan;
+    Ephys.CVIofNBI = Nan; %3 decimal places
+    Ephys.NBurstRate = Nan;
+    Ephys.fracInNburst = Nan;
+    
+end
+    
+    
+    
+
+    
